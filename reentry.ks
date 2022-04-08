@@ -7,21 +7,28 @@ function plannedVector {
 }
 
 function offsetPitch {
+    // Takes the normal vector as a parameter (don't want to keep calculating it)
+    parameter normal.
+    parameter upVec.
+
     // Get the angle-from horizon for planned vector
-    local plannedFore is vectorexclude(ship:FACING:STARVECTOR, ADDONS:TR:PLANNEDVECTOR).
-    local correctedFore is vectorexclude(ship:FACING:STARVECTOR, ADDONS:TR:CORRECTEDVECTOR).
-    local plannedPitch is vectorangle(plannedFore, bestPrograde()).
-    local correctedPitch is vectorangle(correctedFore, bestPrograde()).
+    local plannedFore is vectorexclude(normal, ADDONS:TR:PLANNEDVECTOR).
+    local correctedFore is vectorexclude(normal, ADDONS:TR:CORRECTEDVECTOR).
+    local plannedPitch is vectorangle(plannedFore, upVec).
+    local correctedPitch is vectorangle(correctedFore, upVec).
+
+    // Set pitch for reentry
     local pitch is correctedPitch - plannedPitch.
-    // Apply a 1-degree offset, since I like to come in short
-    set pitch to pitch - 1.
-    if pitch < 0 {
-        if pitch < -10 {
-            return -30.
+    // "Add" one to pitch, as I like to pull a little short
+    set pitch to pitch + 1.
+
+    if pitch > 0 {
+        if pitch > 10 {
+            return 30.
         }
         return 3 * pitch.
     }
-    return MIN(pitch, 10).
+    return MAX(pitch, -10).
 }
 
 function bestPrograde {
@@ -33,10 +40,18 @@ function bestPrograde {
 }
 
 function offsetYaw {
+    // Takes the normal vector as a parameter (don't want to keep calculating it)
+    parameter normal.
+    parameter upVec.
+
     // Get the angle-from prograde for vectors
-    local plannedYaw is vectorexclude(ship:FACING:TOPVECTOR, ADDONS:TR:PLANNEDVECTOR).
-    local correctedYaw is vectorexclude(ship:FACING:TOPVECTOR, ADDONS:TR:CORRECTEDVECTOR).
-    local letsRoll is vectorangle(correctedYaw, plannedYaw).
+    local plannedFore is vectorexclude(upVec, ADDONS:TR:PLANNEDVECTOR).
+    local correctedFore is vectorexclude(upVec, ADDONS:TR:CORRECTEDVECTOR).
+
+    local plannedYaw is vectorangle(plannedFore, normal).
+    local correctedYaw is vectorangle(correctedFore, normal).
+
+    local letsRoll is plannedYaw - correctedYaw.
     if ABS(letsRoll * 5) <= 30 {
         return letsRoll * 5.
     }
@@ -51,15 +66,17 @@ function main {
     wait until ship:altitude < (body:ATM:HEIGHT + 1000).
     print "Reentry begun. Assuming control.".
     sas off.
-    local pitchOffset is 0.
-    local rollOffset is 0.
-    local plannedV is 0.
-    lock plannedV to plannedVector().
-    lock pitchOffset to offsetPitch().
-    lock rollOffset to offsetYaw().
-    local pitchVector is 0.
-    lock steering to ANGLEAXIS(offsetPitch(), SHIP:FACING:STARVECTOR) * plannedVector().
-    // to ANGLEAXIS(rollOffset, SHIP:FACING:FOREVECTOR) * pitchVector.
+    local lookAt is 0.
+    local lookUp is 0.
+    local normal is 0.
+    local upVec is V(0, 0, 0).
+    
+    lock upVec to ((-1)*SHIP:BODY:POSITION).
+    lock normal to vectorcrossproduct(ship:velocity:surface, upVec).
+    lock lookAt to ANGLEAXIS(offsetPitch(normal, upVec), normal) * plannedVector().
+    lock lookUp to ANGLEAXIS(offsetYaw(normal, upVec), SHIP:FACING:FOREVECTOR) * ((-1)*SHIP:BODY:POSITION).
+    lock steering to LOOKDIRUP(lookAt, lookUp).
+    //lock steering to LOOKDIRUP(lookAt, upVec).
     local voice is  GETVOICE(0).
     local beep is NOTE("C4", 0.1, 0.15).
     local rest is NOTE("R", 0.1).
