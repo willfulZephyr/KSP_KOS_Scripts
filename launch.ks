@@ -257,11 +257,13 @@ function doLaunch {
     parameter pitchFunction.
     parameter throttleFunction.
     parameter rollAttitude IS "".
+    
+    local targetGroundVelocity is 2000.
 
     // Half-pitch is where we'd like the angle to be 45degrees
     //(cos(1/((x/10)+1/PI)) + 1) / 2
     local pitch is 90.
-    local targetHeading is adjustedHeading(targetInclination, 3250, ship:VELOCITY:ORBIT:MAG).
+    local targetHeading is adjustedHeading(targetInclination, targetGroundVelocity, ship:VELOCITY:ORBIT:MAG).
     local finalHeading is trueHeading(targetInclination).
     local targetThrottle is 1.
     local currentRoll is 270.
@@ -357,12 +359,12 @@ function doLaunch {
             }
             RETURN.
         }
-        //if ship:altitude > 40000 AND setPrograde {
-        //    // Switch to prograde
-        //    set setPrograde to false.
-        //    lock steering to bestPrograde(currentRoll).
-        //    lock errorAngle to VANG(FACING:VECTOR, ship:prograde:VECTOR).
-        //}
+        if ship:GROUNDSPEED > targetGroundVelocity AND setPrograde {
+            // Switch to prograde
+            set setPrograde to false.
+            lock steering to bestPrograde(currentRoll).
+            lock errorAngle to VANG(FACING:VECTOR, ship:prograde:VECTOR).
+        }
         if ship:altitude > 52000 AND stageFairings {
             // Only do this once
             set stageFairings to false.
@@ -478,14 +480,8 @@ function adjustedHeading {
         set roughHeading to 360 - roughHeading.
     }
     local triAng is abs(90 - roughHeading).
-    // Trying the orbital velocity of the target orbit
-    //local targetOrbitalVelocity is SQRT(Kerbin:MU / (targetAltitude + Kerbin:RADIUS)).
-    //local dV is SQRT(targetOrbitalVelocityParm - (VELOCITY_AT_COAST^2 * cos(triAng))).
-    local dv is targetVelocity.
-    // Mike OG calc
-    //local dV to sqrt(6088800 - 928800 * cos(triAng)).
-
-    local correction is arcsin(surfaceVelocity*sin(triAng) / dV).
+    // Solving the ASS triangle with Law of Sines
+    local correction is arcsin(surfaceVelocity * sin(triAng) / targetVelocity).
     if targetInclination > 0 {
         set correction to -1 * correction.
     }
