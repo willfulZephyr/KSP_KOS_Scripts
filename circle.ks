@@ -5,6 +5,7 @@ run once common.
 
 function main {
     parameter targetNode.
+    parameter runNode.
     if targetNode:STARTSWITH("a") {
         createCircularMan("apoapsis").
     } else if targetNode:STARTSWITH("p") {
@@ -13,9 +14,14 @@ function main {
         print "Cannot circularize at " + targetNode.
         return.
     }
-    doNode().
-    print "The Circle is complete.".
+    if (runNode:STARTSWITH("y")) {
+        doNode(0).
+        print "The Circle is complete.".
+    } else {
+        print "Maneuver node created.".
+    }
 }
 
 parameter targetNode.
-main(targetNode).
+parameter runNode is "n".
+main(targetNode, runNode).

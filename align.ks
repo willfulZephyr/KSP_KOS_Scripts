@@ -34,6 +34,14 @@ function main {
     if alignType = "i" {
         set lookDir to downvctr.
     }
+    if alignType = "b" {
+        set lookDir to -sunvctr.
+        set upDir to northvctr.
+    }
+    if alignType = "t" {
+        set lookDir to perpvctr.
+        set upDir to sunvctr.
+    }
 
     sas off.
     lock steering to LOOKDIRUP(lookDir, upDir).

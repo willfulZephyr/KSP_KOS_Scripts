@@ -3,9 +3,10 @@
 run once common.
 
 function main {
-
-    doNode().
+    parameter rotation.
+    doNode(rotation).
 
 }
 
-main().
+parameter rotation is 0.
+main(rotation).

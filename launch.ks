@@ -46,8 +46,12 @@ function KSCLaunch {
     
     // Mike Abens ascent profile (uses MATH)
     local mathPitchKerbin IS {
-        if ship:altitude < 40000 {
-            return (54021666.2 - ship:altitude) / SQRT(2918700708000000 - (ship:altitude - 54021666.2)^2).
+        local pitchStart is 500.
+        local halfPitchedAlt is 10000.
+        if ship:altitude < pitchStart {
+            return 90.
+        } else if ship:altitude < 40000 {
+            return 90 * (halfPitchedAlt / (ship:altitude - pitchStart + halfPitchedAlt)).
         } else {
             // return prograde
             if NAVMODE = "SURFACE" {
@@ -59,6 +63,7 @@ function KSCLaunch {
     }.
 
     local mathThrottleKerbin IS {
+        local twrUppitude is 3.
         if stage:deltaV:current < 0.1 {
             STAGE.
             STEERINGMANAGER:RESETPIDS().
@@ -66,14 +71,14 @@ function KSCLaunch {
         if (ship:altitude < 10000) {
             // Ramp up from 1.33 to MAX
             local twrFloor is 1.33.
-            return twrFloor + ((2.71 - twrFloor) * ship:altitude / 10000).
-        } else if (ship:altitude < 18000) {
+            return twrFloor + ((twrUppitude - twrFloor) * ship:altitude / 10000).
+        } else if (ship:altitude < 19000) {
             // punch it through the lower atmosphere
-            return 2.71.
-        } else if (ship:altitude < 20000) {
+            return twrUppitude.
+        } else if (ship:altitude < 20500) {
             // Flying High - ramp down to 1.25
             local twrFloor is 1.25.
-            return twrFloor + ((2.71 - twrFloor) * (20000 - ship:altitude) / 2000).
+            return twrFloor + ((twrUppitude - twrFloor) * (20500 - ship:altitude) / 2000).
         } else if (ship:altitude < 40000) {
             if ship:orbit:ETA:apoapsis < 50 {
                 return 1.4.
@@ -256,7 +261,8 @@ function doLaunch {
     // Half-pitch is where we'd like the angle to be 45degrees
     //(cos(1/((x/10)+1/PI)) + 1) / 2
     local pitch is 90.
-    local targetHeading is adjustedHeading(targetInclination).
+    local targetHeading is adjustedHeading(targetInclination, 3250, ship:VELOCITY:ORBIT:MAG).
+    local finalHeading is trueHeading(targetInclination).
     local targetThrottle is 1.
     local currentRoll is 270.
     lock targetThrottle to setTWR(throttleFunction()).
@@ -330,6 +336,7 @@ function doLaunch {
     // Is there a launch escape system to ditch?
     local escapesystems is SHIP:PARTSNAMEDPATTERN("LaunchEscapeSystem").
     local ditchEscapeSystem is false.
+    local setPrograde is true.
     if escapesystems:LENGTH > 0 {
         set ditchEscapeSystem to true.
         print "Will release the launch escape system.".
@@ -343,14 +350,20 @@ function doLaunch {
 
     until ship:apoapsis > targetAltitude {
         // Watch for getting too far off angle
-        if errorAngle > 15 {
-            print errorAngle + " Degrees off trajectory. Aborting.".
+        if errorAngle > 15.0 {
+            print errorAngle + " degrees off trajectory. Aborting.".
             if (ship:altitude < 18000) {
                 ABORT ON.
             }
             RETURN.
         }
-        if ship:altitude > 50000 AND stageFairings {
+        //if ship:altitude > 40000 AND setPrograde {
+        //    // Switch to prograde
+        //    set setPrograde to false.
+        //    lock steering to bestPrograde(currentRoll).
+        //    lock errorAngle to VANG(FACING:VECTOR, ship:prograde:VECTOR).
+        //}
+        if ship:altitude > 52000 AND stageFairings {
             // Only do this once
             set stageFairings to false.
             local thisFairing is 0.
@@ -385,7 +398,8 @@ function doLaunch {
 
     // Coast to apoapsis
     set targetThrottle to 0.
-    lock steering to bestPrograde().
+    // If it got missed.
+    lock steering to bestPrograde(currentRoll).
 
     if ditchEscapeSystem {
         // Missed this under power
@@ -409,7 +423,7 @@ function doLaunch {
     // Wait to exit atmosphere to calculate circular orbit.
     if body:ATM:EXISTS {
         until ship:altitude >= body:ATM:HEIGHT {
-            if ship:altitude > 65000 AND stageFairings {
+            if ship:altitude > 68000 AND stageFairings {
                 // Missed deploying under power
                 set stageFairings to false.
                 local thisFairing is 0.
@@ -436,7 +450,7 @@ function doLaunch {
 
     // Circularlize
     createCircularMan("apoapsis").
-    doNode().
+    doNode(currentRoll-90).
 
     unlock steering.
     unlock throttle.
@@ -446,28 +460,48 @@ function doLaunch {
 }
 
 function bestPrograde {
+    parameter currentRoll.
     if NAVMODE = "SURFACE" {
-        return ship:srfprograde + R(0, 0, 180).
+        return ship:srfprograde + R(0, 0, currentRoll).
     } else if NAVMODE = "ORBIT" {
-        return ship:prograde + R(0, 0, 180).
+        return ship:prograde + R(0, 0, currentRoll).
     }
 }
 
 function adjustedHeading {
     parameter targetInclination.
+    parameter targetVelocity.
+    parameter surfaceVelocity.
     local roughHeading is 90 - targetInclination.
     if (roughHeading < 0) {
         // Negatives loop around on the circle.
         set roughHeading to 360 - roughHeading.
     }
     local triAng is abs(90 - roughHeading).
-    local dV to sqrt(6088800 - 928800 * cos(triAng)).
-    local correction is arcsin(180*sin(triAng) / dV).
+    // Trying the orbital velocity of the target orbit
+    //local targetOrbitalVelocity is SQRT(Kerbin:MU / (targetAltitude + Kerbin:RADIUS)).
+    //local dV is SQRT(targetOrbitalVelocityParm - (VELOCITY_AT_COAST^2 * cos(triAng))).
+    local dv is targetVelocity.
+    // Mike OG calc
+    //local dV to sqrt(6088800 - 928800 * cos(triAng)).
+
+    local correction is arcsin(surfaceVelocity*sin(triAng) / dV).
     if targetInclination > 0 {
         set correction to -1 * correction.
     }
     return roughHeading + correction.
 }
+
+function trueHeading {
+    parameter targetInclination.
+    local roughHeading is 90 - targetInclination.
+    if (roughHeading < 0) {
+        // Negatives loop around on the circle.
+        set roughHeading to 360 - roughHeading.
+    }
+    return roughHeading.
+}
+
 
 function setTWR {
     parameter targetTWR.

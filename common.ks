@@ -1,5 +1,15 @@
 @LAZYGLOBAL OFF.
 
+DECLARE GLOBAL m_startReduceTime TO 2.
+
+function getStartReduceTime {
+    return MAX(m_startReduceTime, 0.25).
+}
+function setStartReduceTime {
+    parameter newValue.
+    set m_startReduceTime to newValue.
+}
+
 function getHeight {
     return ship:altitude - ship:geoposition:terrainheight.
 }
@@ -121,22 +131,23 @@ function createCircularMan {
 
 // Executes the next manuever node in the orbit
 function doNode {
+    parameter rotation.
     if HASNODE {
         CLEARSCREEN.
         sas off.
-        local startReduceTime to 1.5.
+        setStartReduceTime(1.5).
         local nd is NEXTNODE.
-        local startTime is calculateStartTime(nd, startReduceTime).
-        local startVector is nd:BURNVECTOR.
-        lockSteering(nd).
+        local startTime is calculateStartTime(nd).
+        lockSteering(nd, rotation).
         startBurn(startTime).
-        if reduceThrottle(nd, startReduceTime) < 0 {
+        if reduceThrottle(nd, getStartReduceTime()) < 0 {
             // Ran out of fuel
             lock throttle to 0.
             unlock steering.
             unlock throttle.
         } else {
-            endBurn(nd, startVector).
+            local startVector is nd:BURNVECTOR.
+            endBurn(nd, startVector, rotation).
         }
         sas on.
     } else {
@@ -149,25 +160,26 @@ function doNode {
 // Use node and offset to plan start time
 function calculateStartTime {
     parameter nd.
-    parameter startReduceTime.
     setLimit(100).
+    local baseReduceStart is getStartReduceTime().
     local percent is 100.
     local calculatedBurnTime is burnTime(nd:BURNVECTOR:MAG).
     until calculatedBurnTime > 8 {
         // This is too short, lower engine power
         set percent to percent - scaledPercent(percent).
         setLimit(percent).
+        local reducedStart to baseReduceStart * percent / 100.
+        setStartReduceTime(reducedStart).
         set calculatedBurnTime to burnTime(nd:BURNVECTOR:MAG).
         if percent = 0.1 {
-            print "At minimum thrust. Reducing cutoff".
-            set startReduceTime to 0.5.
+            print "At minimum thrust.".
             break.
         }
     }
     print "Estimated Burn Time: " + calculatedBurnTime.
     local halfDeltaV is nd:BURNVECTOR:MAG / 2.
     local meanTimeToNode is burnTime(halfDeltaV).
-    return TIME:SECONDS + nd:ETA - meanTimeToNode - startReduceTime/2.
+    return TIME:SECONDS + nd:ETA - meanTimeToNode - getStartReduceTime()/2.
     //return TIME:SECONDS + nd:ETA - calculatedBurnTime/2 - startReduceTime/2.
 }
 
@@ -237,7 +249,9 @@ function vesselISP {
 // Lock the steering to the node
 function lockSteering {
     parameter nd.
-    lock steering to nd:BURNVECTOR.
+    parameter rotation.
+    // 0 is "north" for the frame    
+    lock steering to nd:BURNVECTOR:DIRECTION + R(0, 0, rotation).
     PRINT " ".
     print "Locking to the burn vector.".
     local angleErr is 100.
@@ -291,15 +305,15 @@ function reduceThrottle {
     print "Reducing throttle".
     
     // Reduce time is spread out over more as we reduce thrust
-    local reduceTime to startReduceTime * 2 / 0.9.
+    local reduceTime to startReduceTime * 1.8.
     local startTime to TIME:SECONDS.
     local stopTime to TIME:SECONDS + reduceTime.
     local scale to 0.1^(1/reduceTime).
 
-    lock throttle to scale^(TIME:SECONDS - startTime).
+    lock throttle to max(scale^(TIME:SECONDS - startTime), 0.1).
+    //lock throttle to max((1 - (TIME:SECONDS - startTime)/reduceTime), 0.1).
     wait until TIME:SECONDS > stopTime.
-
-    // set throttle as low as we can go while waiting to finish.
+    // locking throttle to min to reduce calculation time.
     lock throttle to 0.1.
     return 1.
 }
@@ -308,6 +322,7 @@ function reduceThrottle {
 function endBurn {
     parameter nd.
     parameter startVector.
+    parameter rotation.
 
     wait until maneuverComplete(nd, startVector).
 
@@ -317,8 +332,8 @@ function endBurn {
 
     lock throttle to 0.
     // Have to unlock steering before you can remove the node (steering is locked to the node)
-    unlock steering.
     unlock throttle.
+    unlock steering.
     REMOVE nd.
 
     wait 2.
@@ -328,7 +343,7 @@ function endBurn {
 function maneuverComplete {
     parameter nd.
     parameter startVector.
-    return VANG(startVector, nd:BURNVECTOR) > 5.
+    return VANG(startVector, nd:BURNVECTOR) > 2.5.
 }
 
 // Clean Staging

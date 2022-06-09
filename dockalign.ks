@@ -1,56 +1,22 @@
+@LAZYGLOBAL OFF.
+
+runoncepath("0:dockscripts").
 
 function main {
-    if NOT HASTARGET {
-        print "No target selected.".
-        print "Exiting program.".
-        RETURN.
-    }
-
-    // Make sure both target and control point are docking ports
-    if TARGET:IsType("DockingPort") {
-        if SHIP:CONTROLPART:IsType("DockingPort") {
-            print "Beginning docking alignment ...".
-        } else {
-            print "Control is not a docking port.".
-            print "Exiting program.".
-            RETURN.
-        }
-    } else {
-        print "Target is not a docking port.".
+    if NOT isReadyToDock() {
         print "Exiting program.".
         RETURN.
     }
 
     // Get direction of the docking port
-    local targetDir is TARGET:PORTFACING.
     lock targetDir to TARGET:PORTFACING.
-    local headingDir is -1 * targetDir:VECTOR.
     lock headingDir to -1 * targetDir:VECTOR.
 
     SAS OFF.
     lock steering to LOOKDIRUP(headingDir, targetDir:UPVECTOR).
 
-    local angleErr is 100.
-    local rollErr is 100.
-    wait 0.25.
-    lock angleErr to STEERINGMANAGER:ANGLEERROR.
-    lock rollErr to STEERINGMANAGER:ROLLERROR.
-    wait 0.01.
-    local passCounter is 0.
-    UNTIL abs(angleErr) < 0.5 and abs(rollErr) < 1 and passCounter > 5 {
-        clearscreen.
-        print "Beginning docking alignment ...".
-        PRINT(" Facing angle - " + STEERINGMANAGER:ANGLEERROR).
-        PRINT(" Roll angle - " + STEERINGMANAGER:ROLLERROR).
-        FROM {local i is 1.} UNTIL i > passCounter STEP { SET i to i + 1. } DO {
-            PRINT(" .").
-        }
-        PRINT(" ").
-        if abs(angleErr) < 0.5 and abs(rollErr) < 1 {
-            set passCounter to passCounter + 1.
-        }
-        wait 0.01.
-    }
+    print "Beginning docking alignment ...".
+    WAIT UNTIL isSteeringDone().
     clearscreen.
     PRINT("Alignment complete.").
 
@@ -67,7 +33,7 @@ function main {
     lock yrel to rel:MAG * cos(vang(rel, ship:Facing:topvector)).
     lock zrel to rel:MAG * cos(vang(rel, ship:Facing:starvector)).
 
-    print "Distance" AT (12, 1).
+    print "Distance" AT (13, 1).
     print "Velocity" AT (25, 1).
     print "Fore/Aft: " AT (2, 2).
     print "Up/Down: " AT (2, 3).
@@ -76,9 +42,9 @@ function main {
         print PadAndRound(xdis, 1) AT (14, 2).
         print PadAndRound(ydis, 1) AT (14, 3).
         print PadAndRound(zdis, 1) AT (14, 4).
-        print PadAndRound(xrel, 2) AT (27, 2).
-        print PadAndRound(yrel, 2) AT (27, 3).
-        print PadAndRound(zrel, 2) AT (27, 4).
+        print PadAndRound(xrel, 2) AT (25, 2).
+        print PadAndRound(yrel, 2) AT (25, 3).
+        print PadAndRound(zrel, 2) AT (25, 4).
         HighlightRow(xdis, xrel, 2).
         HighlightRow(ydis, yrel, 3).
         HighlightRow(zdis, zrel, 4).
@@ -120,24 +86,24 @@ function HighlightRow {
     if ABS(distance) < 0.1 AND ABS(speed) < 0.05 {
         // DONE!
         print ">" AT (0, row).
-        print "<" AT (35, row).
+        print "<" AT (34, row).
         return.
     }
     if (distance < 0 AND speed > 0) OR (distance > 0 AND speed < 0) {
         // Good!
         print "-" AT (0, row).
-        print "-" AT (35, row).
+        print "-" AT (34, row).
         return.
     } 
     if (distance < 0 AND speed < 0) OR (distance > 0 AND speed > 0) {
         // BAD!
         print "@" AT (0, row).
-        print "@" AT (35, row).
+        print "@" AT (34, row).
         return.
     } 
     // Netral
     print " " AT (0, row).
-    print " " AT (35, row).
+    print " " AT (34, row).
 }
 
 main().
